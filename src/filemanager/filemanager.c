@@ -85,6 +85,7 @@
 #include "src/file_history.h"         // show_file_history()
 
 #include "filemanager.h"
+#include "tools.h"
 
 /*** global variables ****************************************************************************/
 
@@ -290,6 +291,21 @@ create_command_menu (void)
 /* --------------------------------------------------------------------------------------------- */
 
 static GList *
+create_tools_menu (void)
+{
+    GList *entries = NULL;
+
+    entries = g_list_append (entries, menu_entry_new (_ ("&Sessions..."), CK_TerminalSessions));
+    entries = g_list_append (entries, menu_entry_new (_ ("&Assistants..."), CK_TerminalAssistants));
+    entries = g_list_append (entries, menu_separator_new ());
+    entries = g_list_append (
+        entries, menu_entry_new (_ ("&Install / update / purge..."), CK_TerminalManage));
+    return entries;
+}
+
+/* --------------------------------------------------------------------------------------------- */
+
+static GList *
 create_options_menu (void)
 {
     GList *entries = NULL;
@@ -321,6 +337,7 @@ init_menu (void)
     menubar_add_menu (the_menubar, menu_new (_ ("&File"), create_file_menu (), "[File Menu]"));
     menubar_add_menu (the_menubar,
                       menu_new (_ ("&Command"), create_command_menu (), "[Command Menu]"));
+    menubar_add_menu (the_menubar, menu_new (_ ("&Tools"), create_tools_menu (), NULL));
     menubar_add_menu (the_menubar,
                       menu_new (_ ("&Options"), create_options_menu (), "[Options Menu]"));
     right_menu = menu_new ("", create_panel_menu (), "[Left and Right Menus]");
@@ -1167,6 +1184,22 @@ midnight_execute_cmd (Widget *sender, long command)
         diff_view_cmd ();
         break;
 #endif
+    case CK_TerminalTools:
+        tools_cmd ();
+        break;
+
+    case CK_TerminalSessions:
+        tools_sessions_cmd ();
+        break;
+
+    case CK_TerminalAssistants:
+        tools_assistants_cmd ();
+        break;
+
+    case CK_TerminalManage:
+        tools_manage_cmd ();
+        break;
+
     case CK_Edit:
         edit_cmd (current_panel);
         break;
@@ -1761,8 +1794,10 @@ do_nc (void)
         mc_filehighlight = mc_fhl_new (TRUE);
 
         create_file_manager ();
+        tools_init ();
         (void) dlg_run (filemanager);
 
+        tools_done ();
         mc_fhl_free (&mc_filehighlight);
 
         ret = TRUE;

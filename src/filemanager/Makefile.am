@@ -22,6 +22,7 @@ libmcfilemanager_la_SOURCES = \
 	mountlist.c mountlist.h \
 	panelize.c panelize.h \
 	panel.c panel.h \
+	tools.c tools.h \
 	tree.c tree.h \
 	treestore.c treestore.h
 

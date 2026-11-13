@@ -1,3 +1,16 @@
+Unreleased (mymc)
+
+- Core
+
+    * Default to the external nano editor while preserving explicit editor preferences.
+    * Add a Tools menu for tmux sessions and installed terminal assistants.
+    * Discover optional tools in the background and show a readable tmux detach hint.
+    * Add session listing, attachment, creation, renaming, client detachment and stopping.
+    * Add install/update/purge actions for tmux, Hermes, Pi, OpenCode, Claude Code and Codex CLI.
+    * Purge includes settings, credentials and history after explicit confirmation;
+      unknown installation ownership and unsafe data paths fail explicitly.
+
+
 Version 4.8.33
 
 Starting with this release, we will be using language features that require a C99 compiler to build.

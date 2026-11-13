@@ -116,7 +116,7 @@
 #define PATH_ENV_SEP                   ':'
 #define TMPDIR_DEFAULT                 "/tmp"
 #define SCRIPT_SUFFIX                  ""
-#define get_default_editor()           "vi"
+#define get_default_editor()           "nano"
 #define OS_SORT_CASE_SENSITIVE_DEFAULT TRUE
 
 /*** enums ***************************************************************************************/
