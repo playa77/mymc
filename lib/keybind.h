@@ -185,6 +185,10 @@ enum
     CK_Unselect,
     CK_SelectExt,
     CK_SelectInvert,
+    CK_TerminalTools,
+    CK_TerminalSessions,
+    CK_TerminalAssistants,
+    CK_TerminalManage,
 
     // panels
     CK_PanelOtherCd = 200L,

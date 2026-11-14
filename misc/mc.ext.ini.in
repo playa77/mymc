@@ -1205,7 +1205,7 @@ Open=%cd %p/ucpio://
 View=%view{ascii} @EXTHELPERSDIR@/archive.sh view cpio
 
 [Include/editor]
-Open=%var{EDITOR:vi} %f
+Open=%var{EDITOR:nano} %f
 
 [Include/image]
 Open=@EXTHELPERSDIR@/image.sh open ALL_FORMATS

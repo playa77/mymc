@@ -1,0 +1,276 @@
+#!/bin/sh
+# Revision: 2026-11-13-r1
+# Lifecycle operations for the optional terminal tools. No credentials are printed.
+set -eu
+
+fail () { printf '%s\n' "$*" >&2; exit 1; }
+[ "$#" -ge 2 ] || fail 'Usage: mymc-tool [--plan] install|update|purge|status tool'
+plan=false
+if [ "$1" = --plan ]; then plan=true; shift; fi
+[ "$#" = 2 ] || fail 'Expected an action and a tool.'
+action=$1
+tool=$2
+case $action in install|update|purge|status) ;; *) fail 'Unknown action.' ;; esac
+case $tool in
+    tmux) package=; binary=tmux ;;
+    hermes) package=; binary=hermes ;;
+    pi) package=@earendil-works/pi-coding-agent; binary=pi ;;
+    opencode) package=@opencode/cli; binary=opencode ;;
+    claude) package=; binary=claude ;;
+    codex) package=@openai/codex; binary=codex ;;
+    *) fail 'Unknown tool.' ;;
+esac
+[ -n "${HOME:-}" ] && [ "$HOME" != / ] || fail 'A non-root HOME directory is required.'
+# Keep the caller's PATH precedence and discover vendor default installation directories too.
+PATH=${PATH:-/usr/bin:/bin}:$HOME/.local/bin:$HOME/.opencode/bin:$HOME/.hermes/bin
+export PATH
+managed=$HOME/.local/share/mymc/tools/$tool
+PATH=$PATH:$managed/bin
+export PATH
+found=$(command -v "$binary" || true)
+if [ "$tool" = codex ] && [ -z "$found" ]; then found=$(command -v codex-cli || true); fi
+
+resolve () {
+    # Resolve executable symlinks on both Linux and macOS, without requiring GNU realpath.
+    target=$1
+    links=0
+    while [ -L "$target" ]; do
+        links=$((links + 1)); [ "$links" -le 40 ] || fail 'Too many executable symlinks.'
+        parent=$(CDPATH= cd -P -- "$(dirname -- "$target")" && pwd)
+        link=$(readlink "$target")
+        case $link in /*) target=$link ;; *) target=$parent/$link ;; esac
+    done
+    parent=$(CDPATH= cd -P -- "$(dirname -- "$target")" && pwd)
+    printf '%s/%s\n' "$parent" "$(basename -- "$target")"
+}
+
+manager=
+actual=
+[ -z "$found" ] || actual=$(resolve "$found")
+if [ -n "$actual" ]; then
+    case $actual in
+        "$managed"/*) manager=managed-npm ;;
+        "$HOME"/.local/share/claude/*) [ "$tool" != claude ] || manager=native-claude ;;
+        "$HOME"/.local/share/codex/*|"$HOME"/.local/bin/codex) [ "$tool" != codex ] || manager=native-codex ;;
+        "$HOME"/.opencode/*) [ "$tool" != opencode ] || manager=native-opencode ;;
+        "$HOME"/.hermes/*) [ "$tool" != hermes ] || manager=native-hermes ;;
+    esac
+fi
+# Hermes publishes a launcher outside its checkout; the supported CLI owns its uninstall.
+if [ "$tool" = hermes ] && [ -n "$found" ] && [ -z "$manager" ]; then manager=native-hermes; fi
+if [ -z "$manager" ] && [ -n "$found" ] && command -v npm >/dev/null 2>&1; then
+    npm_root=$(npm root -g 2>/dev/null || true)
+    case $actual in
+        "$npm_root"/@openai/codex/*) manager=npm; package=@openai/codex ;;
+        "$npm_root"/@earendil-works/pi-coding-agent/*) manager=npm; package=@earendil-works/pi-coding-agent ;;
+        "$npm_root"/@mariozechner/pi-coding-agent/*) manager=npm; package=@mariozechner/pi-coding-agent ;;
+        "$npm_root"/@opencode/cli/*) manager=npm; package=@opencode/cli ;;
+        "$npm_root"/opencode-ai/*) manager=npm; package=opencode-ai ;;
+        "$npm_root"/@anthropic-ai/claude-code/*) manager=npm; package=@anthropic-ai/claude-code ;;
+    esac
+fi
+if [ -z "$manager" ] && [ -n "$found" ] && command -v brew >/dev/null 2>&1; then
+    brew_prefix=$(brew --prefix 2>/dev/null || true)
+    case $actual in
+        "$brew_prefix"/Cellar/tmux/*) manager=brew; package=tmux ;;
+        "$brew_prefix"/Cellar/opencode/*) manager=brew; package=opencode ;;
+        "$brew_prefix"/Cellar/opencode-v2/*) manager=brew; package=anomalyco/tap/opencode-v2 ;;
+        "$brew_prefix"/Caskroom/claude-code/*) manager=brew; package=claude-code ;;
+        "$brew_prefix"/Caskroom/codex/*) manager=brew; package=codex ;;
+    esac
+fi
+if [ "$tool" = pi ] && [ -n "$found" ] && [ -z "$manager" ]; then
+    case $actual in /nix/store/*) manager=nix ;; *) manager=native-pi ;; esac
+fi
+if [ "$tool" = tmux ] && { [ -z "$found" ] || [ -z "$manager" ]; }; then
+    if [ -n "$found" ]; then
+        case $actual in /usr/bin/tmux|/bin/tmux) ;; *) fail "tmux at $found is not owned by a supported package manager." ;; esac
+    fi
+    if command -v apt-get >/dev/null 2>&1; then manager=apt
+    elif command -v dnf >/dev/null 2>&1; then manager=dnf
+    elif command -v pacman >/dev/null 2>&1; then manager=pacman
+    elif command -v zypper >/dev/null 2>&1; then manager=zypper
+    elif command -v brew >/dev/null 2>&1; then manager=brew; package=tmux
+    else fail 'tmux installation requires apt-get, dnf, pacman, zypper, or Homebrew.'
+    fi
+fi
+
+# Match a package's executable before handing an existing installation to a manager.
+if [ -n "$found" ] && [ -z "$manager" ] && [ "$action" != status ]; then
+    fail "Cannot safely $action $tool at $found: installation method not recognized. Use its original installer/package manager. No files were removed."
+fi
+if [ "$action" = status ]; then
+    printf 'Tool: %s\nExecutable: %s\nInstallation: %s\n' "$tool" "${found:-not installed}" "${manager:-not managed}"
+    exit 0
+fi
+if [ "$action" = update ] && [ -z "$found" ]; then fail "$tool is not installed. Choose Install first."; fi
+if [ "$action" = install ] && [ -n "$found" ]; then fail "$tool is already installed. Choose Update instead."; fi
+
+if [ "$action" = purge ] && [ "$tool" = tmux ] && [ -n "$found" ]; then
+    if "$found" list-sessions >/dev/null 2>&1; then
+        fail 'tmux still has running sessions. Stop them in Tools > Sessions > Manage before purging tmux.'
+    fi
+fi
+if [ "$action" = purge ] && [ "$tool" != tmux ] && command -v pgrep >/dev/null 2>&1; then
+    if pgrep -x "$binary" >/dev/null 2>&1; then fail "Close running $tool instances before purging."; fi
+fi
+
+# Do not let an overridden data-home or a symlinked parent redirect recursive removal.
+validate_data_path () {
+    path=$1
+    case $path in "$HOME"/*) ;; *) fail "Refusing to purge data outside HOME: $path" ;; esac
+    relative=${path#"$HOME"/}
+    case $relative in ''|/*|*/|*//*|.|..|../*|*/../*|*/..|*/./*|*/.) fail "Unsafe purge path: $path" ;; esac
+    [ ! -L "$path" ] || fail "Refusing to purge a symlinked data path: $path"
+    ancestor=$(dirname -- "$path")
+    while [ "$ancestor" != "$HOME" ]; do
+        [ ! -L "$ancestor" ] || fail "Refusing to purge through a symlinked directory: $ancestor"
+        ancestor=$(dirname -- "$ancestor")
+    done
+}
+# Pass paths as individual arguments, never expand an unquoted list.
+data_paths () {
+    case $tool in
+        tmux) "$@" "$HOME/.tmux.conf" "$HOME/.tmux.conf.local" "$HOME/.tmux" "${XDG_CONFIG_HOME:-$HOME/.config}/tmux" ;;
+        hermes) "$@" "${HERMES_HOME:-$HOME/.hermes}" ;;
+        pi) "$@" "${PI_CODING_AGENT_DIR:-$HOME/.pi}" "${XDG_CACHE_HOME:-$HOME/.cache}/pi" ;;
+        opencode) "$@" "$HOME/.opencode" "${XDG_CONFIG_HOME:-$HOME/.config}/opencode" "${XDG_DATA_HOME:-$HOME/.local/share}/opencode" "${XDG_STATE_HOME:-$HOME/.local/state}/opencode" "${XDG_CACHE_HOME:-$HOME/.cache}/opencode" ;;
+        claude) "$@" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "$HOME/.claude.json" "$HOME/.claude.json.backup" "$HOME"/.claude.json.backup.* "${XDG_CACHE_HOME:-$HOME/.cache}/claude" ;;
+        codex) "$@" "${CODEX_HOME:-$HOME/.codex}" "${XDG_CACHE_HOME:-$HOME/.cache}/codex" ;;
+    esac
+}
+validate_paths () { for path do validate_data_path "$path"; done; }
+print_paths () { for path do printf '  %s\n' "$path"; done; }
+remove_paths () { for path do rm -rf -- "$path"; done; }
+if [ "$action" = purge ]; then
+    data_paths validate_paths
+    validate_data_path "$managed"
+fi
+
+if [ -z "$manager" ] && [ "$action" = install ]; then
+    case $tool in hermes) manager=native-hermes ;; claude) manager=native-claude ;; *) manager=managed-npm ;; esac
+fi
+printf '%s %s\nInstallation method: %s\n' "$action" "$tool" "${manager:-program not installed}"
+if [ "$action" = purge ]; then
+    printf 'Permanently remove the program, settings, stored credentials, and history.\nData paths:\n'
+    data_paths print_paths
+    case $tool in claude|codex)
+        [ -z "$found" ] || printf 'Log out before removal to clear stored credentials, including OS credential-store entries.\n' ;;
+    esac
+    if [ "$manager" = native-pi ]; then
+        printf 'The official Pi installer will open. Select Uninstall Pi; data is deleted only after the program is removed.\n'
+    fi
+fi
+if [ "$manager" = managed-npm ]; then printf 'Private npm prefix: %s\nPackage: %s\n' "$managed" "$package"; fi
+if [ "$manager" = npm ]; then printf 'Global npm package: %s\n' "$package"; fi
+if [ "$action" = install ]; then
+    case $manager in
+        native-hermes) printf 'Official installer: https://hermes-agent.nousresearch.com/install.sh\n' ;;
+        native-claude) printf 'Official installer: https://claude.ai/install.sh\n' ;;
+    esac
+fi
+if [ "$manager" = managed-npm ] && [ "$action" != purge ]; then
+    validate_data_path "$managed"
+fi
+$plan && exit 0
+
+as_root () {
+    if [ "$(id -u)" = 0 ]; then "$@"
+    elif command -v sudo >/dev/null 2>&1; then sudo -- "$@"
+    else fail 'This package operation needs administrator rights. Install sudo or use the system package manager as an administrator.'
+    fi
+}
+installer () {
+    command -v curl >/dev/null 2>&1 || fail 'curl is required for the official installer.'
+    command -v bash >/dev/null 2>&1 || fail 'bash is required for the official installer.'
+    downloaded=$(mktemp "${TMPDIR:-/tmp}/mymc-installer.XXXXXXXX")
+    trap 'rm -f -- "$downloaded"' EXIT HUP INT TERM
+    curl --fail --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 "$1" -o "$downloaded"
+    bash "$downloaded"
+    rm -f -- "$downloaded"
+    trap - EXIT HUP INT TERM
+}
+if [ "$action" = purge ] && [ -n "$found" ]; then
+    case $tool in
+        claude) "$found" auth logout || fail 'Claude logout failed. No uninstall or data deletion was performed. Resolve the logout error and retry.' ;;
+        codex) "$found" logout || fail 'Codex logout failed. No uninstall or data deletion was performed. Resolve the logout error and retry.' ;;
+    esac
+fi
+case $manager in
+    managed-npm)
+        command -v npm >/dev/null 2>&1 || fail 'npm and a compatible Node.js runtime are required. Pi requires Node.js 22.19 or newer.'
+        case $action in
+            install|update)
+                mkdir -p "$managed"
+                if [ "$tool" = pi ]; then npm install --global --prefix "$managed" --ignore-scripts "$package@latest"
+                else npm install --global --prefix "$managed" "$package@latest"; fi ;;
+            purge) rm -rf -- "$managed" ;;
+        esac ;;
+    npm)
+        case $action in
+            update) npm install --global "$package@latest" ;;
+            purge) npm uninstall --global "$package" ;;
+        esac ;;
+    native-hermes)
+        case $action in
+            install) installer https://hermes-agent.nousresearch.com/install.sh ;;
+            update) "$found" update ;;
+            purge) "$found" uninstall --full -y ;;
+        esac ;;
+    native-pi)
+        case $action in
+            update) "$found" update ;;
+            purge)
+                printf 'In the official Pi installer, select Uninstall Pi to remove its runtime.\n'
+                installer https://pi.dev/install.sh
+                [ ! -e "$found" ] || fail 'Pi is still installed. Purge cancelled; no settings or history were deleted.' ;;
+        esac ;;
+    nix)
+        case $action in update) nix profile upgrade pi ;; purge) nix profile remove pi ;; esac ;;
+    native-codex)
+        case $action in
+            update) installer https://chatgpt.com/codex/install.sh ;;
+            purge)
+                validate_data_path "$HOME/.local/share/codex"
+                rm -f -- "$HOME/.local/bin/codex"
+                rm -rf -- "$HOME/.local/share/codex" ;;
+        esac ;;
+    native-opencode)
+        case $action in
+            update) "$found" upgrade ;;
+            purge) : ;; # Its native executable is inside ~/.opencode, removed with its data below.
+        esac ;;
+    native-claude)
+        case $action in
+            install) installer https://claude.ai/install.sh ;;
+            update) "$found" update ;;
+            purge)
+                validate_data_path "$HOME/.local/share/claude"
+                rm -f -- "$HOME/.local/bin/claude"
+                rm -rf -- "$HOME/.local/share/claude" ;;
+        esac ;;
+    apt)
+        case $action in
+            install) as_root apt-get update; as_root apt-get install -y tmux ;;
+            update) as_root apt-get update; as_root apt-get install --only-upgrade -y tmux ;;
+            purge) as_root apt-get purge -y tmux ;;
+        esac ;;
+    dnf)
+        case $action in install) as_root dnf install -y tmux ;; update) as_root dnf upgrade -y tmux ;; purge) as_root dnf remove -y tmux ;; esac ;;
+    pacman)
+        case $action in install|update) as_root pacman -S --needed tmux ;; purge) as_root pacman -R tmux ;; esac ;;
+    zypper)
+        case $action in install) as_root zypper --non-interactive install tmux ;; update) as_root zypper --non-interactive update tmux ;; purge) as_root zypper --non-interactive remove tmux ;; esac ;;
+    brew)
+        case $action in install) brew install "$package" ;; update) brew upgrade "$package" ;; purge) brew uninstall "$package" ;; esac ;;
+    '') [ "$action" = purge ] || fail 'Installation method unavailable.' ;;
+    *) fail 'Unsupported installation method.' ;;
+esac
+if [ "$action" = purge ]; then
+    data_paths remove_paths
+    # Do not clear a shared package-manager cache or other tools' installations.
+    [ ! -d "$managed" ] || rm -rf -- "$managed"
+else
+    [ -n "$(command -v "$binary" || true)" ] || fail 'The command is not available after installation. Check the installer output and PATH.'
+fi
+printf '\nCompleted: %s %s\n' "$action" "$tool"

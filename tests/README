@@ -23,3 +23,62 @@ Tips and tricks
 [3]: Actually, some tests (like src/vfs/extfs/helpers-list) don't use
      this framework and will compile just fine. But that's the exception.
 [4]: https://stackoverflow.com/questions/1649814/debugging-unit-test-in-c-using-check
+
+Terminal tools integration checks
+---------------------------------
+
+After building and installing MC, run:
+
+    MC_TEST_BINARY=/absolute/path/to/installed/mc \
+        python3 tests/integration/test_terminal_tools.py -v
+    python3 tests/integration/test_tool_lifecycle.py -v
+
+These PTY checks use temporary configuration and fake tool executables. They
+exercise background discovery, conditional actions, session selection, new
+sessions, selected directories, shell quoting, nested tmux, the detach status
+hint, and the nano default without accessing real sessions or assistant services.
+
+In MC, the Tools menu separates daily use from maintenance:
+- Sessions: list, attach, create, or manage running tmux sessions.
+- Assistants: launch installed assistants in a new tmux session.
+- Install / update / purge: select any tool, then its lifecycle action or details.
+
+Manage running sessions offers Attach, Rename, Detach all clients (programs keep
+running), and Stop session (ends running programs). Stop and Detach require a
+confirmation; Cancel is the initial selection. Session IDs, not interpolated
+names, identify the selected session.
+
+Purge means program AND settings, credentials, and history. A preview lists the
+paths before confirmation. Claude Code and Codex log out before uninstalling to
+clear OS credential-store entries; a failed logout stops the purge. tmux cannot
+be purged while its server has running sessions. Unknown installation methods,
+symlinked data paths, and data paths outside HOME fail explicitly rather than
+claiming a full purge. Shared package caches and unrelated tools are preserved.
+The operation runs with terminal progress/error output and waits for Enter
+before returning to MC. Tool discovery restarts afterwards.
+
+Fresh Pi, OpenCode, and Codex installs use their official npm packages in private
+prefixes under ~/.local/share/mymc/tools/<tool>. npm/Node.js are prerequisites
+(Pi needs Node.js 22.19+). Hermes and Claude Code use their official HTTPS
+installers. curl and bash are prerequisites for those installers. tmux uses the
+system package manager (apt, dnf, pacman, zypper, or Homebrew) and requests admin
+rights through sudo where needed. Existing recognized npm, native, Homebrew,
+and Pi Nix installations update/uninstall through their original method.
+Native Pi purge invokes its official installer: choose Uninstall Pi there; MC
+checks that the program was removed before deleting user data.
+
+The tests use fake package managers and HTTPS downloads: they do not download
+or install vendor tools, modify a real package database, or delete real user
+credentials. They also verify cancellation, failed installs/logouts, exact
+session selection, and purge path boundaries.
+New sessions use a selected local directory, otherwise the active local panel
+directory, otherwise home. Claude Code is detected as `claude`; Codex CLI is
+`codex` (or `codex-cli` when `codex` is unavailable). tmux is required for launch
+actions. TerminalTools, TerminalSessions, TerminalAssistants, and TerminalManage
+can also be assigned in a custom keymap.
+
+Sessions opened through MC show `Detach: Ctrl+b, then d (session keeps running)`
+in the tmux status line, using the configured prefix if it differs. Hold Ctrl
+and press b, release both keys, then press d to return to MC. Existing status
+text is retained after the hint. Existing explicit editor preferences and EDITOR
+still take precedence over the new nano default.

@@ -10,6 +10,8 @@ PKGDATA_IN = mc.charsets.in
 
 PKGDATA_OUT = mc.charsets
 
+dist_pkgdata_SCRIPTS = mymc-tool
+
 dist_pkgdata_DATA = \
 	mc.lib
 
