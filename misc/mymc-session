@@ -1,0 +1,37 @@
+#!/bin/sh
+# Create only new assistant sessions. See doc/decisions/0002-assistant-session-names.md.
+
+if [ "$#" -ne 2 ]; then
+    printf '%s\n' 'Usage: mymc-session TOOL DIRECTORY' >&2
+    exit 2
+fi
+tool=$1
+directory=$2
+case $tool in
+    pi|hermes|opencode) prefix=$tool ;;
+    claude) prefix=claude-code ;;
+    codex|codex-cli) prefix=codex-cli ;;
+    *) printf 'Unsupported assistant: %s\n' "$tool" >&2; exit 2 ;;
+esac
+
+# tmux creates the name atomically. If another creator won the race, retry
+# only when that exact name now exists; unrelated errors must be reported.
+error_file=$(mktemp "${TMPDIR:-/tmp}/mymc-session.XXXXXXXX") || exit 1
+trap 'rm -f -- "$error_file"' EXIT
+number=0
+while [ "$number" -le 9999 ]; do
+    name=$(printf '%s-%02d' "$prefix" "$number")
+    if result=$(tmux new-session -d -P -F '#{session_id}' -s "$name" -c "$directory" "$tool" 2>"$error_file"); then
+        printf '%s\n' "$result"
+        exit 0
+    fi
+    if ! tmux has-session -t "=$name" 2>/dev/null; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            printf '%s\n' "$line" >&2
+        done < "$error_file"
+        exit 1
+    fi
+    number=$((number + 1))
+done
+printf 'No available tmux session name for %s (00-9999).\n' "$prefix" >&2
+exit 1

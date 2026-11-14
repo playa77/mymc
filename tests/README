@@ -32,6 +32,7 @@ After building and installing MC, run:
     MC_TEST_BINARY=/absolute/path/to/installed/mc \
         python3 tests/integration/test_terminal_tools.py -v
     python3 tests/integration/test_tool_lifecycle.py -v
+    python3 tests/integration/test_session_names.py -v
 
 These PTY checks use temporary configuration and fake tool executables. They
 exercise background discovery, conditional actions, session selection, new
@@ -71,6 +72,12 @@ The tests use fake package managers and HTTPS downloads: they do not download
 or install vendor tools, modify a real package database, or delete real user
 credentials. They also verify cancellation, failed installs/logouts, exact
 session selection, and purge path boundaries.
+New assistant sessions are named `pi-00`, `claude-code-00`, `hermes-00`,
+`opencode-00`, or `codex-cli-00`, using the lowest available number for that
+assistant. Both Codex executable names share the `codex-cli` sequence. Numbers
+expand beyond 99; up to 9999 is supported. Existing sessions and titles are not
+changed, and ordinary shell sessions keep tmux's default naming.
+
 New sessions use a selected local directory, otherwise the active local panel
 directory, otherwise home. Claude Code is detected as `claude`; Codex CLI is
 `codex` (or `codex-cli` when `codex` is unavailable). tmux is required for launch

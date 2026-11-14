@@ -5,6 +5,21 @@
 *~
 *.cache
 *.tar.gz
+
+# Out-of-tree builds and generated distribution/package artifacts
+/build/
+/build-*/
+/*.deb
+/*.buildinfo
+/*.changes
+/mc-*.tar.bz2
+/mc-*.tar.xz
+
+# Autotools/libtool and Python-generated files
+.libs/
+__pycache__/
+*.py[cod]
+
 # autoconf runs "mktemp ./confXXXXXX"
 /conf??????/
 /confdefs.h

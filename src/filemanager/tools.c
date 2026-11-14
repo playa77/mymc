@@ -196,9 +196,20 @@ tools_launch (const char *tool)
     char *quoted = g_shell_quote (directory);
     char *prepare;
 
-    /* All tool names come from the fixed table above. Never interpolate session names. */
-    prepare = g_strdup_printf ("session=$(tmux new-session -d -P -F '#{session_id}' -c %s %s)",
-                               quoted, tool != NULL ? tool : "");
+    if (tool == NULL)
+        prepare = g_strdup_printf ("session=$(tmux new-session -d -P -F '#{session_id}' -c %s)",
+                                   quoted);
+    else
+    {
+        char *helper = g_build_filename (mc_global.share_data_dir, "mymc-session", NULL);
+        char *quoted_helper = g_shell_quote (helper);
+        char *quoted_tool = g_shell_quote (tool);
+
+        prepare = g_strdup_printf ("session=$(sh %s %s %s)", quoted_helper, quoted_tool, quoted);
+        g_free (quoted_tool);
+        g_free (quoted_helper);
+        g_free (helper);
+    }
     tools_connect (prepare);
     g_free (prepare);
     g_free (quoted);

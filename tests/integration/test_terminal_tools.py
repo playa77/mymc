@@ -218,14 +218,14 @@ class TerminalToolsTest(unittest.TestCase):
         m.send(b'\r')
         c = m.wait_command(lambda c: c[1][:1] == ['new-session'])
         self.assertEqual(c[1], ['new-session', '-d', '-P', '-F', '#{session_id}',
-                                '-c', str(m.folder), 'hermes'])
+                                '-s', 'hermes-00', '-c', str(m.folder), 'hermes'])
         m.wait_command(lambda c: c[1] == ['switch-client', '-t', '$42'])
 
     def test_only_installed_tools_shown(self):
         m = self.start(tools=['tmux', 'pi', 'opencode', 'claude', 'codex', 'codex-cli'], shortcut='TerminalAssistants')
         m.assistants()
         for tool in (b'Pi', b'OpenCode', b'Claude Code', b'Codex CLI'):
-            self.assertIn(tool, m.output)
+            m.wait(tool)
         self.assertNotIn(b'Hermes', m.output)
         self.assertNotIn(b'codex-cli', m.output)
 
